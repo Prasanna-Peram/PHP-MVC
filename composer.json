@@ -1,0 +1,25 @@
+{
+    "name": "bdt/code-sample",
+    "description": "Code sample",
+    "license": "proprietary",
+    "require": {
+        "php": "^8.3",
+        "doctrine/dbal": "^4.2",
+        "twig/twig": "^3.3"
+    },
+    "autoload": {
+        "psr-4": {
+            "Bdt\\Example\\": "src/",
+            "App\\": "app/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "require-dev": {
+        "phpstan/phpstan": "^1.10",
+        "phpunit/phpunit": "^11.1"
+    }
+}

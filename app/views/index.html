@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>{{ title }}</title>
+        <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/vuetify@3.7.3/dist/vuetify.min.js"></script>
+        <link href="https://cdn.jsdelivr.net/npm/vuetify@3.7.3/dist/vuetify.min.css" rel="stylesheet">
+        <link href="https://cdn.jsdelivr.net/npm/@mdi/font@5.x/css/materialdesignicons.min.css" rel="stylesheet">
+        <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    </head>
+
+    <body>
+        {% verbatim %}
+        <div id="app">
+            <v-app>
+                <v-app-bar app color="#4a66c2">
+                    <v-toolbar-title class="white--text">POSTS</v-toolbar-title>
+                </v-app-bar>
+    
+                <v-container fluid class="mt-10">
+                    <v-row>
+                        <v-col cols="12" md="4">
+                            <v-card class="pa-4 create-edit-card">
+                                <v-card-title class="text-h6 card-title">{{ isEditing ? 'Edit Post' : 'Create New Post' }}</v-card-title>
+                                <v-form @submit.prevent="submitPost" v-model="valid" ref="addPostForm">
+                                    <v-text-field v-model="currentPost.title" label="Title" :rules="titleRules"></v-text-field>
+                                    <v-textarea v-model="currentPost.body" label="Body" :rules="bodyRules"></v-textarea>
+                                    <v-text-field v-model="currentPost.author" label="Author" :rules="authorRules"></v-text-field>
+                                    <v-btn type="submit" color="primary" :loading="loading" :disabled="!valid">{{ isEditing ? 'Save Changes' : 'Create' }}</v-btn>
+                                    <v-btn v-if="isEditing" type="button" color="gray" @click="resetForm" :disabled="loading">Cancel</v-btn>
+                                    <v-btn v-if="!isEditing" type="button" color="gray" @click="resetForm" :disabled="loading">Cancel</v-btn>
+                                </v-form>
+                            </v-card>
+                        </v-col>
+    
+                        <v-col cols="12" md="8">
+                            <v-card class="pa-4 posts-container">
+                                <v-card-title class="card-title">All Posts</v-card-title>
+                                <v-alert type="warning" class="mb-8" v-if="posts.length === 0">No posts yet.</v-alert>
+                                <v-data-table v-if="posts.length > 0" :items="filteredPosts" :headers="tableHeaders" item-key="id" class="elevation-1" density="compact">
+                                    <template v-slot:top>
+                                        <v-toolbar density="compact" color="#4a66c2">
+                                            <v-spacer></v-spacer>
+                                            <v-text-field v-model="search" label="Search Posts" append-icon="mdi-magnify" single-line hide-details dense style="max-width: 250px;"></v-text-field>
+                                        </v-toolbar>
+                                    </template>
+                                    <template v-slot:column.title>
+                                        <span class="blue--text text--darken-2">Title</span>
+                                    </template>
+                                    <template v-slot:column.author>
+                                        <span class="blue--text text--darken-2">Author</span>
+                                    </template>
+                                    <template v-slot:column.created_at>
+                                        <span class="blue--text text--darken-2">Created At</span>
+                                    </template>
+                                    <template v-slot:column.updated_at>
+                                        <span class="blue--text text--darken-2">Updated At</span>
+                                    </template>
+                                    <template v-slot:column.actions>
+                                        <span class="blue--text text--darken-2">Actions</span>
+                                    </template>
+                                    <template v-slot:item.created_at="{ item }">
+                                        <span>{{ formatDate(item.created_at) }}</span>
+                                    </template>
+                                    <template v-slot:item.updated_at="{ item }">
+                                        <span>{{ formatDate(item.updated_at) }}</span>
+                                    </template>
+                                    <template v-slot:item.actions="{ item }">
+                                        <div class="d-flex justify-end" style="margin-right:-12px">
+                                            <v-btn size="x-small" icon @click="viewPost(item)" class="mr-2" v-hover>
+                                                <v-icon>mdi-eye</v-icon>
+                                            </v-btn>
+                                            <v-btn size="x-small" icon @click="editPost(item)" class="mr-2" v-hover>
+                                                <v-icon>mdi-pencil</v-icon>
+                                            </v-btn>
+                                            <v-btn size="x-small" icon @click="confirmDelete(item.id)" class="mr-2" v-hover>
+                                                <v-icon>mdi-delete</v-icon>
+                                            </v-btn>
+                                        </div>
+                                    </template>
+                                </v-data-table>
+                            </v-card>
+                        </v-col>
+                    </v-row>
+    
+                    <v-snackbar v-model="snackbar.visible" :color="snackbar.color" :timeout="snackbar.timeout">{{ snackbar.message }}</v-snackbar>
+    
+                    <!-- Confirmation Dialog -->
+                    <v-dialog v-model="deleteDialogVisible" max-width="500px">
+                        <v-card>
+                            <v-card-title class="headline">Are you sure you want to delete this post?</v-card-title>
+                            <v-card-actions>
+                                <v-spacer></v-spacer>
+                                <v-btn color="red" @click="deletePost(confirmDeleteId)" :loading="loadingDelete" :disabled="loadingDelete">Delete</v-btn>
+                                <v-btn @click="deleteDialogVisible = false" :disabled="loadingDelete">Cancel</v-btn>
+                            </v-card-actions>
+                        </v-card>
+                    </v-dialog>
+    
+                     <!-- Post Details Dialog -->
+                     <v-dialog v-model="postDetailsDialog" max-width="500px">
+                        <v-card>
+                            <v-card-title class="headline">Post Details</v-card-title>
+                            <v-card-text>
+                                <div><strong>Title:</strong> {{ selectedPost.title }}</div>
+                                <div><strong>Body:</strong> {{ selectedPost.body }}</div>
+                                <div><strong>Author:</strong> {{ selectedPost.author }}</div>
+                                <div><strong>Created At:</strong> {{ formatDate(selectedPost.created_at) }}</div>
+                                <div><strong>Updated At:</strong> {{ formatDate(selectedPost.updated_at) }}</div>
+                            </v-card-text>
+                            <v-card-actions>
+                                <v-spacer></v-spacer>
+                                <v-btn @click="postDetailsDialog = false">Close</v-btn>
+                            </v-card-actions>
+                        </v-card>
+                    </v-dialog>
+                </v-container>
+            </v-app>
+        </div>
+        {% endverbatim %}
+
+        <script>
+            const { createApp } = Vue;
+            const { createVuetify } = Vuetify;
+            const vuetify = createVuetify();
+    
+            const app = createApp({
+                data() {
+                    return {
+                        posts: [],
+                        isEditing: false,
+                        currentPost: { id: null, title: '', body: '', author: '' },
+                        snackbar: { visible: false, message: '', color: '', timeout: 3000 },
+                        search: '',
+                        tableHeaders: [
+                            { title: 'TITLE', align: 'start', key: 'title' },
+                            { title: 'AUTHOR', align: 'start', key: 'author' },
+                            { title: 'CREATED AT', align: 'start', key: 'created_at' },
+                            { title: 'UPDATED AT', align: 'start', key: 'updated_at' },
+                            { title: 'ACTIONS', align: 'end', key: 'actions' }
+                        ],
+                        deleteDialogVisible: false,
+                        confirmDeleteId: null,
+                        loading: false,
+                        loadingDelete: false,
+                        valid: false,
+                        postDetailsDialog: false,
+                        selectedPost: {}
+                    };
+                },
+                computed: {
+                    filteredPosts() {
+                        const searchTerm = this.search.toLowerCase();
+                        return this.posts.filter(post =>
+                            post.title.toLowerCase().includes(searchTerm) ||
+                            post.body.toLowerCase().includes(searchTerm) ||
+                            post.author.toLowerCase().includes(searchTerm)
+                        );
+                    },
+                    titleRules() {
+                        return [
+                            value => !!value || 'Title is required.',
+                            value => value.length >= 5 || 'Title must be at least 5 characters long.',
+                            value => /^[A-Za-z0-9\s]+$/.test(value) || 'Title can only contain letters, numbers, spaces.'
+                        ];
+                    },
+                    bodyRules() {
+                        return [
+                            value => !!value || 'Body is required.',
+                            value => /^[A-Za-z0-9\s\.]+$/.test(value) || 'Body can only contain letters, numbers, spaces, and periods.'
+                        ];
+                    },
+                    authorRules() {
+                        return [
+                            value => !!value || 'Author is required.',
+                            value => /^[A-Za-z\s]+$/.test(value) || 'Author can only contain letters and spaces.'
+                        ];
+                    }
+                },
+                mounted() {
+                    this.posts = JSON.parse('{{ posts | json_encode | raw }}');
+                },
+                methods: {
+                    formatDate(dateString) {
+                        const utcDate = new Date(dateString + " UTC");
+                        const day = utcDate.getDate().toString().padStart(2, '0');
+                        const month = (utcDate.getMonth() + 1).toString().padStart(2, '0');
+                        const year = utcDate.getFullYear();
+                        let hours = utcDate.getHours();
+                        const minutes = utcDate.getMinutes().toString().padStart(2, '0');
+                        const ampm = hours >= 12 ? 'PM' : 'AM';
+                        hours = hours % 12 || 12;
+                        return `${day}/${month}/${year} ${hours}:${minutes} ${ampm}`;
+                    },
+                    editPost(post) {
+                        this.isEditing = true;
+                        this.currentPost = { ...post };
+                    },
+                    resetForm() {
+                        this.isEditing = false;
+                        this.currentPost = { id: null, title: '', body: '', author: '' };
+                        this.$nextTick(() => {
+                            this.$refs.addPostForm.resetValidation();
+                        });
+                    },
+                    confirmDelete(postId) {
+                        this.confirmDeleteId = postId;
+                        this.deleteDialogVisible = true;
+                    },
+                    checkForDuplicateTitle(title, currentPostId = null) {
+                        return this.posts.some(post => post.title === title && post.id !== currentPostId);
+                    },
+                    submitPost() {
+                        if (this.checkForDuplicateTitle(this.currentPost.title, this.currentPost.id)) {
+                            this.snackbar.message = 'This title is already taken!';
+                            this.snackbar.color = 'error';
+                            this.snackbar.visible = true;
+                            return;
+                        }
+    
+                        this.loading = true;
+                        const url = this.isEditing ? '/api/update' : '/api/add';
+
+                        const formData = new FormData();
+                                formData.append('title', this.currentPost.title);
+                                formData.append('body', this.currentPost.body);
+                                formData.append('author', this.currentPost.author);
+
+                                if (this.isEditing) {
+                                    formData.append('id', this.currentPost.id); 
+                                }
+
+                        axios.post(url, formData )
+                            .then(response => {
+                                const post = response.data.post;
+                                
+                                if (this.isEditing) {
+                                    const index = this.posts.findIndex(p => p.id === post.id);
+                                    if (index !== -1) {
+                                       
+                                        this.posts = this.posts.map(p => (p.id === post.id ? post : p));
+                                    }
+                                } else {
+                                    this.posts = [...this.posts, post]; 
+                                }
+                                this.posts = [...this.posts]; 
+                                this.resetForm();
+                                this.snackbar.message = 'Post saved successfully!';
+                                this.snackbar.color = 'success';
+                                this.snackbar.visible = true;
+                            
+                                location.reload();
+                           
+                            })
+                            .catch(() => {
+                                this.snackbar.message = 'Error saving post!';
+                                this.snackbar.color = 'error';
+                                this.snackbar.visible = true;
+                            })
+                            .finally(() => this.loading = false);
+                           
+                    },
+                    deletePost(postId) {
+                        if (!postId) return;
+                        this.loadingDelete = true;
+                        const formData = new FormData();
+                        formData.append('id', postId); 
+                        axios.post('/api/delete', formData)
+                            .then(() => {
+                                this.posts = this.posts.filter(post => post.id !== postId);
+                                this.snackbar.message = 'Post deleted successfully!';
+                                this.snackbar.color = 'success';
+                                this.snackbar.visible = true;
+                            })
+                            .catch(() => {
+                                this.snackbar.message = 'Error deleting post!';
+                                this.snackbar.color = 'error';
+                                this.snackbar.visible = true;
+                            })
+                            .finally(() => {
+                                this.deleteDialogVisible = false;
+                                this.loadingDelete = false;
+                            });
+                    },
+                    viewPost(post) {
+                        this.selectedPost = { ...post };
+                        this.postDetailsDialog = true;
+                    }
+                }
+            });
+    
+            app.use(vuetify).mount('#app');
+        </script>
+    </body>
+</html>
